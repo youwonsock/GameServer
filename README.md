@@ -72,7 +72,7 @@ Protocol Buffers로 클라이언트와 서버가 공유하는 메시지 형식�
 - `GameRoom` → `Map`, `Zone`, `VisionCube`
 - `DbTransaction` → Entity Framework Core → SQL Server LocalDB
 
-> **이미지 플레이스홀더** — 클라이언트·계정 서버·게임 서버의 핵심 클래스 구조 UML 추가 예정
+> **UML 플레이스홀더** — Unity Client, AccountServer, GameServer와 핵심 클래스의 관계를 나타내는 전체 구조 UML 추가 예정
 
 ### 클래스별 역할
 
@@ -118,7 +118,7 @@ Protocol Buffers로 클라이언트와 서버가 공유하는 메시지 형식�
 - Protocol Buffers 메시지를 패킷 ID별 handler에 연결합니다.
 - 클라이언트는 수신 패킷을 `PacketQueue`에 저장한 뒤 Unity 메인 스레드에서 처리합니다.
 
-> **이미지 플레이스홀더** — 비동기 소켓 및 패킷 처리 흐름 이미지 추가 예정
+> **UML 플레이스홀더** — 소켓 수신부터 패킷 프레이밍, `PacketQueue`, Unity 메인 스레드 처리까지의 시퀀스 UML 추가 예정
 
 ### JobQueue 기반 작업 직렬화
 
@@ -133,7 +133,7 @@ Protocol Buffers로 클라이언트와 서버가 공유하는 메시지 형식�
 - `JobTimer`가 몬스터 AI와 VisionCube 갱신 같은 지연 작업을 예약합니다.
 - DB 처리 완료 후 결과 작업을 다시 GameRoom 큐에 전달해 게임 상태에 반영합니다.
 
-> **이미지 플레이스홀더** — GameLogic·GameRoom·DB JobQueue 흐름 이미지 추가 예정
+> **코드 샘플 플레이스홀더** — `Push`, `PushAfter`, `Flush`와 DB 완료 후 GameRoom으로 작업을 반환하는 흐름을 보여주는 실행 가능한 예제 추가 예정
 
 ### 데이터베이스 연동
 
