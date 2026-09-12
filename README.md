@@ -1,765 +1,228 @@
-# Network-2D-Game
+# Network 2D Game
 
-## Developer Info
-* 유원석(You Won Sock)
-* GitHub : https://github.com/youwonsock
-* Mail : qazwsx233434@gmail.com
+Unity 클라이언트와 C# 게임 서버를 연동해 로그인, 실시간 전투, 인벤토리, DB 저장, 관심 영역 기반 동기화를 구현한 2D 멀티플레이 포트폴리오 프로젝트입니다.
 
-### Development kits
+## 목차
 
-<p>
-<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Unity_Technologies_logo.svg/1280px-Unity_Technologies_logo.svg.png" height="40">
-</p>
+- [프로젝트 개요](#프로젝트-개요)
+- [프로젝트 요약](#프로젝트-요약)
+- [사용 기술](#사용-기술)
+- [클래스 구조 UML](#클래스-구조-uml)
+- [기능 상세](#기능-상세)
+- [빌드 및 실행](#빌드-및-실행)
 
-<p>
-<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Microsoft_.NET_logo.svg/640px-Microsoft_.NET_logo.svg.png" height="40">
-</p>
+## 프로젝트 개요
 
-<b><h2>Periods</h2></b>
+| 항목 | 내용 |
+| --- | --- |
+| 개발 인원 | 1명 — 유원석 (You Won Sock) |
+| GitHub | [youwonsock](https://github.com/youwonsock) |
+| 이메일 | qazwsx233434@gmail.com |
+| 개발 기간 | 2024.08 ~ 2024.10 |
+| 프로젝트 목적 | Unity 기반 2D 멀티플레이 게임과 서버 권위형 게임 로직·DB 연동 구조 구현 |
+| 개발 언어 | C# |
+| 클라이언트 | Unity 2019.3.15f1 |
+| 서버 | .NET 8, ASP.NET Core |
+| 네트워크 | TCP Socket, SocketAsyncEventArgs, Google Protocol Buffers |
+| 데이터베이스 | Microsoft SQL Server LocalDB, Entity Framework Core 8.0.8 |
+| 주요 라이브러리 | Google.Protobuf 3.28.2, Newtonsoft.Json 13.0.3 |
 
-* 2024-08 - 2023-09
+## 프로젝트 요약
 
-## Contribution
+Network 2D Game은 계정 서버, 게임 서버, Unity 클라이언트를 분리하고 서로 다른 통신 목적에 맞춰 REST API와 TCP 소켓을 함께 사용한 프로젝트입니다. 게임 서버가 이동·전투·몬스터·보상·인벤토리 상태를 처리하고, 클라이언트는 서버에서 받은 결과를 화면에 반영합니다.
 
-### Account Server
+주요 실행 흐름은 다음과 같습니다.
 
-![login](https://github.com/user-attachments/assets/a919d285-0b14-461e-8a8a-991db1f6eba0)
+1. Unity 클라이언트가 ASP.NET Core AccountServer에 계정 생성 또는 로그인 요청을 전송합니다.
+2. 로그인 성공 후 클라이언트가 TCP 7777 포트의 GameServer에 연결합니다.
+3. 패킷은 크기와 ID를 포함한 헤더 및 Protocol Buffers 메시지로 직렬화됩니다.
+4. 수신 작업은 GameRoom, DB, 클라이언트 메인 스레드의 JobQueue로 전달되어 순차 처리됩니다.
+5. 게임 서버가 이동, 전투, 몬스터 AI, 아이템 보상과 캐릭터 상태를 관리합니다.
+6. Zone과 VisionCube가 플레이어의 관심 영역을 계산하고 필요한 오브젝트만 동기화합니다.
 
-ASP web server를 사용해 로그인 서버를 제작하였습니다.  
-AccountServer는 Client로부터 계정 생성 및 로그인 요청을 받아 DB의 계정 정보와 비교하여 결과를 반환합니다.
+## 사용 기술
 
-<details>
-<summary>AccountServer/Controllers/AccountController.cs</summary>
-<div markdown="1">
+### Unity Client
 
-```c#
+로그인, 캐릭터 선택, 게임 플레이, 인벤토리 UI를 구성했습니다. `NetworkManager`가 게임 서버 연결과 패킷 송신을 담당하고, 네트워크 스레드에서 받은 메시지는 `PacketQueue`를 거쳐 Unity 메인 스레드에서 처리합니다.
 
-  [Route("api/[controller]")]
-  [ApiController]
-  public class AccountController : ControllerBase
-  {
-      AppDbContext context;
-  
-      public AccountController(AppDbContext context)
-      {
-          this.context = context;
-      }
-  
-      [HttpPost]
-      [Route("create")]
-      public CreateAccountPacketRes CreateAccount([FromBody] CreateAccountPacketReq req)
-      {
-          CreateAccountPacketRes res = new CreateAccountPacketRes();
-  
-          AccountDb account = context.Accounts
-                                  .AsNoTracking()
-                                  .Where(a => a.AccountName == req.AccountName)
-                                  .FirstOrDefault();
-  
-          if (account == null)
-          {
-              context.Accounts.Add(new AccountDb
-              {
-                  AccountName = req.AccountName,
-                  Password = req.Password
-              });
-  
-              bool success = context.SaveChangesEx();
-              res.Success = success;
-          }
-          else
-          {
-              res.Success = false;
-          }
-  
-          return res;
-      }
-  
-      [HttpPost]
-      [Route("login")]
-      public LoginAccountPacketRes LoginAccount([FromBody] LoginAccountPacketReq req)
-      {
-          LoginAccountPacketRes res = new LoginAccountPacketRes();
-  
-          AccountDb account = context.Accounts
-                                  .AsNoTracking()
-                                  .Where(a => a.AccountName == req.AccountName && a.Password == req.Password)
-                                  .FirstOrDefault();
-  
-          if (account == null)
-          {
-              res.Success = false;
-          }
-          else
-          {
-              res.Success = true;
-          }
-  
-          return res;
-      }
-  }
+### ServerCore
 
+`Listener`, `Connector`, `Session`, `RecvBuffer`로 비동기 TCP 통신 계층을 구성했습니다. `SocketAsyncEventArgs`를 사용해 송수신을 처리하고, 길이 기반 패킷 프레이밍으로 분할되거나 연속해서 도착한 패킷을 구분합니다.
+
+### Game Server
+
+`GameLogic`과 `GameRoom`이 게임 월드와 오브젝트의 생명주기를 관리합니다. 게임 로직, 네트워크 송신, DB 작업을 분리하고 `JobSerializer`와 `JobTimer`로 작업 순서와 지연 실행을 제어합니다.
+
+### Account Server / Database
+
+ASP.NET Core REST API로 계정 생성과 로그인을 처리합니다. Entity Framework Core와 SQL Server LocalDB를 사용해 계정, 캐릭터 스탯, 아이템 및 장착 상태를 영속화합니다.
+
+### Protocol Buffers / PacketGenerator
+
+Protocol Buffers로 클라이언트와 서버가 공유하는 메시지 형식을 정의했습니다. `PacketGenerator`가 패킷 ID 등록과 메시지 처리 코드를 생성해 양쪽의 패킷 처리 규칙을 일치시킵니다.
+
+## 클래스 구조 UML
+
+핵심 모듈의 관계는 다음과 같습니다.
+
+- `NetworkManager` → `ServerSession`, `PacketQueue`, `PacketManager`
+- `Session` → `PacketSession` → Client/Server 전용 세션
+- `GameLogic` → `GameRoom` → `Player`, `Monster`, `Projectile`
+- `GameRoom` → `Map`, `Zone`, `VisionCube`
+- `DbTransaction` → Entity Framework Core → SQL Server LocalDB
+
+> **이미지 플레이스홀더** — 클라이언트·계정 서버·게임 서버의 핵심 클래스 구조 UML 추가 예정
+
+### 클래스별 역할
+
+- `Session`: 비동기 소켓 연결, 송수신 큐, 연결 종료와 수신 버퍼를 관리합니다.
+- `PacketSession`: 패킷 길이 헤더를 해석하고 완성된 패킷을 상위 처리기로 전달합니다.
+- `NetworkManager`: Unity 클라이언트의 게임 서버 연결과 메인 스레드 패킷 처리를 조정합니다.
+- `ClientSession`: 서버에서 접속 상태, 계정, 캐릭터와 플레이어 세션을 관리합니다.
+- `GameLogic`: 게임 룸의 생성과 주기적인 업데이트 작업을 관리합니다.
+- `GameRoom`: 게임 오브젝트의 입장·이동·전투·퇴장 및 패킷 브로드캐스트를 처리합니다.
+- `JobSerializer`: 여러 스레드에서 전달된 작업을 큐에 저장하고 정해진 실행 지점에서 순차 처리합니다.
+- `Map`: 충돌 맵, 오브젝트 위치와 격자 기반 경로 탐색을 담당합니다.
+- `Zone`: 공간별 Player, Monster, Projectile 집합을 관리합니다.
+- `VisionCube`: 플레이어 주변의 현재 오브젝트와 이전 오브젝트를 비교해 Spawn/Despawn 대상을 계산합니다.
+- `DbTransaction`: 게임 상태 저장과 아이템 보상 DB 작업을 별도 큐에서 처리한 뒤 결과를 게임 룸에 반영합니다.
+
+## 기능 상세
+
+### 계정 생성 및 로그인
+
+**목적**
+
+게임 접속 전에 계정을 생성하고 인증한 뒤 게임 서버 연결 단계로 전환합니다.
+
+**핵심 구현**
+
+- ASP.NET Core AccountServer가 `account/create`, `account/login` POST 요청을 처리합니다.
+- Entity Framework Core로 계정 중복 여부와 로그인 정보를 조회합니다.
+- Unity의 `WebManager`가 JSON 요청을 전송하고 성공 결과를 UI에 반영합니다.
+- 인증 성공 후 `NetworkManager`가 GameServer에 TCP 연결을 시작합니다.
+
+![계정 생성 및 로그인](https://github.com/user-attachments/assets/a919d285-0b14-461e-8a8a-991db1f6eba0)
+
+### 비동기 TCP 통신 및 패킷 처리
+
+**목적**
+
+클라이언트와 게임 서버가 연결을 유지하면서 여러 종류의 게임 패킷을 비동기로 교환합니다.
+
+**핵심 구현**
+
+- `SocketAsyncEventArgs` 기반의 비동기 accept, connect, send, receive 흐름을 구성했습니다.
+- 수신 버퍼에 누적된 데이터를 `[size(2)][packetId(2)][payload]` 형식으로 분리합니다.
+- Protocol Buffers 메시지를 패킷 ID별 handler에 연결합니다.
+- 클라이언트는 수신 패킷을 `PacketQueue`에 저장한 뒤 Unity 메인 스레드에서 처리합니다.
+
+> **이미지 플레이스홀더** — 비동기 소켓 및 패킷 처리 흐름 이미지 추가 예정
+
+### JobQueue 기반 작업 직렬화
+
+**목적**
+
+네트워크, 게임 로직, DB 작업이 공유 상태를 동시에 변경하지 않도록 실행 순서를 제어합니다.
+
+**핵심 구현**
+
+- `JobSerializer`가 다른 스레드에서 요청된 작업을 잠금으로 보호된 큐에 저장합니다.
+- `GameLogic`, `GameRoom`, `DbTransaction`이 각자의 큐를 순차적으로 비웁니다.
+- `JobTimer`가 몬스터 AI와 VisionCube 갱신 같은 지연 작업을 예약합니다.
+- DB 처리 완료 후 결과 작업을 다시 GameRoom 큐에 전달해 게임 상태에 반영합니다.
+
+> **이미지 플레이스홀더** — GameLogic·GameRoom·DB JobQueue 흐름 이미지 추가 예정
+
+### 데이터베이스 연동
+
+**목적**
+
+계정, 캐릭터 스탯과 아이템 정보를 저장하고 재접속 후에도 게임 상태를 복원합니다.
+
+**핵심 구현**
+
+- Entity Framework Core로 Account, Player, Item 모델과 관계를 구성했습니다.
+- 계정명과 캐릭터명에 unique index를 적용했습니다.
+- 캐릭터 입장 시 스탯과 보유 아이템을 조회해 서버 오브젝트를 초기화합니다.
+- 체력 저장과 아이템 보상 처리는 `DbTransaction` 큐에서 실행합니다.
+
+![데이터베이스 계정 정보](https://github.com/user-attachments/assets/c7683922-4a7d-4814-af1e-f9d49207a5dd)
+![데이터베이스 캐릭터 및 아이템 정보](https://github.com/user-attachments/assets/d004407a-e17a-4699-861f-c86c19a08690)
+
+### 스탯 및 인벤토리
+
+**목적**
+
+플레이어의 장비 변경과 보상 획득 결과를 서버 기준으로 관리합니다.
+
+**핵심 구현**
+
+- Protocol Buffers의 `StatInfo`, `ItemInfo`로 스탯과 아이템 상태를 공유합니다.
+- 장착·해제 요청을 서버가 검증하고 변경된 스탯과 장착 상태를 DB에 저장합니다.
+- 몬스터 처치 보상은 빈 슬롯을 확인한 뒤 DB 저장 성공 시 인벤토리에 추가합니다.
+- 변경된 아이템 목록과 스탯을 패킷으로 클라이언트에 전달합니다.
+
+![스탯 및 인벤토리](https://github.com/user-attachments/assets/0de5e876-cca5-4e93-a08c-1262d66dd74a)
+
+### 공간 분할 및 관심 영역 동기화
+
+**목적**
+
+모든 오브젝트 정보를 전체 플레이어에게 전송하지 않고 주변 오브젝트만 동기화합니다.
+
+**핵심 구현**
+
+- `GameRoom`이 맵을 Zone 단위로 분할합니다.
+- 오브젝트가 Zone 경계를 넘으면 기존 집합에서 제거하고 새 Zone에 등록합니다.
+- `VisionCube`가 인접 Zone에서 시야 범위 안의 오브젝트를 수집합니다.
+- 이전 결과와 현재 결과의 차집합으로 Spawn/Despawn 패킷을 생성합니다.
+- 플레이어 이동 패킷도 위치를 기준으로 필요한 범위에만 브로드캐스트합니다.
+
+![공간 분할 및 관심 영역](https://github.com/user-attachments/assets/88cc95ad-bd12-4fdc-b3e3-98416ad679b6)
+
+### 격자 기반 경로 탐색
+
+**목적**
+
+서버에서 충돌과 점유 상태를 고려해 몬스터가 플레이어에게 이동할 경로를 계산합니다.
+
+**핵심 구현**
+
+- 충돌 맵과 오브젝트 점유 배열을 사용해 이동 가능한 셀을 검사합니다.
+- PriorityQueue와 open/closed 집합, parent 기록으로 탐색 후보를 관리합니다.
+- 목적지에 도달하지 못하면 탐색한 셀 중 목적지와 가장 가까운 위치까지의 경로를 반환합니다.
+- 계산한 다음 셀로 서버의 몬스터 위치를 갱신하고 이동 패킷을 주변 플레이어에게 전송합니다.
+
+![격자 기반 경로 탐색](https://github.com/user-attachments/assets/af6c9ac6-a7ee-4e93-8a52-28b198ae93f5)
+
+## 빌드 및 실행
+
+### 요구 환경
+
+- Unity 2019.3.15f1
+- Visual Studio 2022 또는 .NET 8 SDK
+- Microsoft SQL Server Express LocalDB
+- Windows 환경
+
+### GameServer
+
+`Server/Server/Server.csproj`를 빌드하고 실행합니다.
+
+```powershell
+dotnet restore ".\Server\Server\Server.csproj"
+dotnet run --project ".\Server\Server\Server.csproj"
 ```
 
-</div>
-</details>
+GameServer는 기본적으로 로컬 호스트의 TCP 7777 포트에서 연결을 대기하며, `GameDB` LocalDB와 `Common/MapData`의 맵 데이터를 사용합니다.
 
-<details>
-<summary>Client/UI/Scene/UI_LoginScene.cs</summary>
-<div markdown="1">
+### AccountServer
 
-```c#
+AccountServer는 HTTPS REST API를 제공하며 Unity 클라이언트의 기본 접속 주소는 `https://localhost:5001/api`입니다. 현재 저장소에는 `Server/AccountServer/AccountServer.csproj`가 포함되어 있지 않으므로 실행하려면 ASP.NET Core 프로젝트 설정과 NuGet 참조를 복원해야 합니다.
 
-    public void OnClickCreateButton(PointerEventData evt)
-    {
-        string account = Get<GameObject>((int)GameObjects.AccountName).GetComponent<InputField>().text;
-        string password = Get<GameObject>((int)GameObjects.Password).GetComponent<InputField>().text;
+### Unity Client
 
-        CreateAccountPacketReq packet = new CreateAccountPacketReq();
-        { packet.AccountName = account; packet.Password = password; }
+Unity Hub에서 `Client` 폴더를 Unity 2019.3.15f1 프로젝트로 열고 `Assets/Scenes/Login.unity` 씬을 실행합니다. 로그인 성공 후 클라이언트가 AccountServer와 GameServer에 순서대로 연결합니다.
 
-        Managers.Web.SendPostRequest<CreateAccountPacketRes>("account/create", packet, (res) =>
-        {
-            Debug.Log($"Create Account: {res.Success}");
-
-            Get<GameObject>((int)GameObjects.AccountName).GetComponent<InputField>().text = "";
-            Get<GameObject>((int)GameObjects.Password).GetComponent<InputField>().text = "";
-        });
-    }
-
-    public void OnClickLoginButton(PointerEventData evt)
-    {
-        string account = Get<GameObject>((int)GameObjects.AccountName).GetComponent<InputField>().text;
-        string password = Get<GameObject>((int)GameObjects.Password).GetComponent<InputField>().text;
-
-        LoginAccountPacketReq packet = new LoginAccountPacketReq();
-        { packet.AccountName = account; packet.Password = password; }
-
-        Managers.Web.SendPostRequest<LoginAccountPacketRes>("account/login", packet, (res) =>
-        {
-            Debug.Log($"Login Account: {res.Success}");
-
-            Get<GameObject>((int)GameObjects.AccountName).GetComponent<InputField>().text = "";
-            Get<GameObject>((int)GameObjects.Password).GetComponent<InputField>().text = "";
-
-            if (res.Success)
-            {
-                Managers.Network.ConnectToGame();
-                SceneManager.LoadScene("Game");
-            }
-        });
-    }
-
-```
-
-</div>
-</details>
-</br></br></br>
-
-### Server
-
-#### DataBase 연동
-
-![스크린샷 2024-10-14 185524](https://github.com/user-attachments/assets/c7683922-4a7d-4814-af1e-f9d49207a5dd)
-![스크린샷 2024-10-14 185639](https://github.com/user-attachments/assets/d004407a-e17a-4699-861f-c86c19a08690)
-
-Entity Framework를 사용해 DB와 연동하였습니다.  
-플레이어 스탯 정보와 아이템 정보를 DB에 저장하여 이 정보를 이용해 서버에서 게임을 진행합니다.
-
-<details>
-<summary>Server/DB/DbTransaction.cs</summary>
-<div markdown="1">
-
-```c#
-
-  public partial class DbTransaction : JobSerializer
-  {
-      public static DbTransaction Instance { get; } = new DbTransaction();
-
-
-
-      public static void SavePlayerStatus(Player player, GameRoom room)
-      {
-          if (player == null || room == null)
-              return;
-
-          PlayerDb playerDb = new PlayerDb();
-          playerDb.PlayerDbId = player.PlayerDbId;
-          playerDb.Hp = player.Stat.Hp;
-          Instance.Push<PlayerDb, GameRoom>(SaveToDb, playerDb, room);
-      }
-
-      private static void SaveToDb(PlayerDb playerDb, GameRoom room)
-      {
-          using (AppDbContext db = new AppDbContext())
-          {
-              db.Entry(playerDb).State = EntityState.Unchanged;
-              db.Entry(playerDb).Property(nameof(PlayerDb.Hp)).IsModified = true;
-              db.SaveChangesEx();
-          }
-      }
-
-      public static void RewardPlayer(Player player, RewardData rewardData, GameRoom room)
-      {
-          if (player == null || rewardData == null || room == null)
-              return;
-
-          int? slot = player.Inven.GetEmptySlot();
-          if (slot == null)
-              return;
-
-          ItemDb itemDb = new ItemDb()
-          {
-              TemplateId = rewardData.itemId,
-              Count = rewardData.count,
-              Slot = slot.Value,
-              OwnerDbId = player.PlayerDbId
-          };
-
-          Instance.Push(() =>
-          {
-              using (AppDbContext db = new AppDbContext())
-              {
-                  db.Items.Add(itemDb);
-                  bool success = db.SaveChangesEx();
-                  if (success)
-                  {
-                      room.Push(() =>
-                      {
-                          Item newItem = Item.MakeItem(itemDb);
-                          player.Inven.Add(newItem);
-
-                          {
-                              S_AddItem itemPacket = new S_AddItem();
-                              ItemInfo itemInfo = new ItemInfo();
-                              itemInfo.MergeFrom(newItem.Info);
-                              itemPacket.Items.Add(itemInfo);
-
-                              player.Session.Send(itemPacket);
-                          }
-                      });
-                  }
-              }
-          });
-      }
-  }
-
-```
-
-</div>
-</details>
-
-#### JobQueue
-
-Thread간의 Lock경합을 줄이기 위해 JobQueue를 사용하였습니다.
-패킷 수신 시 이를 처리하는 Job을 JobQueue에 넣어 서버, 클라이언트 모두 메인 스레드에서 처리하도록 하였습니다.
-
-<details>
-<summary>Server/Game/Job/JobSerializer.cs</summary>
-<div markdown="1">
-
-```c#
-
-  public class JobSerializer
-  {
-      JobTimer timer = new JobTimer();
-      Queue<IJob> jobQueue = new Queue<IJob>();
-      object lockObj = new object();
-      bool flush = false;
-
-      public IJob PushAfter(int tickAfter, Action action) { return PushAfter(tickAfter, new Job(action)); }
-      public IJob PushAfter<T1>(int tickAfter, Action<T1> action, T1 t1) { return PushAfter(tickAfter, new Job<T1>(action, t1)); }
-      public IJob PushAfter<T1, T2>(int tickAfter, Action<T1, T2> action, T1 t1, T2 t2) { return PushAfter(tickAfter, new Job<T1, T2>(action, t1, t2)); }
-      public IJob PushAfter<T1, T2, T3>(int tickAfter, Action<T1, T2, T3> action, T1 t1, T2 t2, T3 t3) { return PushAfter(tickAfter, new Job<T1, T2, T3>(action, t1, t2, t3)); }
-
-      public IJob PushAfter(int tickAfter, IJob job)
-      {
-          timer.Push(job, tickAfter);
-          return job;
-      }
-
-      public void Push(Action action) { Push(new Job(action)); }
-      public void Push<T1>(Action<T1> action, T1 t1) { Push(new Job<T1>(action, t1)); }
-      public void Push<T1, T2>(Action<T1, T2> action, T1 t1, T2 t2) { Push(new Job<T1, T2>(action, t1, t2)); }
-      public void Push<T1, T2, T3>(Action<T1, T2, T3> action, T1 t1, T2 t2, T3 t3) { Push(new Job<T1, T2, T3>(action, t1, t2, t3)); }
-
-      public void Push(IJob job)
-      {
-          lock (lockObj)
-          {
-              jobQueue.Enqueue(job);
-          }
-      }
-
-      public void Flush()
-      {
-          timer.Flush();
-
-          while (true)
-          {
-              IJob job = Pop();
-              if (job == null)
-                  return;
-
-              job.Execute();
-          }
-      }
-
-      IJob Pop()
-      {
-          lock (lockObj)
-          {
-              if (jobQueue.Count == 0)
-              {
-                  flush = false;
-                  return null;
-              }
-              return jobQueue.Dequeue();
-          }
-      }
-  }
-
-```
-
-</div>
-</details>
-
-#### Stat
-
-![Inven](https://github.com/user-attachments/assets/0de5e876-cca5-4e93-a08c-1262d66dd74a)
-
-간단한 인벤토리 시스템을 구현하였습니다.  
-플레이어가 아이템 장착, 헤제 시 서버로 장착 여부 및 변경된 스탯을 전송하여 DB에 저장합니다.
-이때 변경된 스탯을 기반으로 서버에서 게임 로직연산을 하게됩니다. 
-
-<details>
-<summary>Server/Data/Data.Contents.cs</summary>
-<div markdown="1">
-
-```c#
-
-  message StatInfo {
-  int32 level = 1;
-  int32 hp = 2;
-  int32 maxHp = 3;
-  int32 attack = 4;
-  float speed = 5;
-  int32 totalExp = 6;
-  }
-
-  message ItemInfo {
-  int32 itemDbId = 1;
-  int32 templateId = 2;
-  int32 count = 3;
-  int32 slot = 4;
-  bool equipped = 5;
-  }
-
-```
-
-</div>
-</details>
-
-<details>
-<summary>Server/Session/ClientSession_PreGame.cs</summary>
-<div markdown="1">
-
-```c#
-
-  public void HandleCreatePlayer(C_CreatePlayer createPlayer)
-  {
-      if (ServerState != PlayerServerState.ServerStateLobby)
-          return;
-
-      using (AppDbContext db = new AppDbContext())
-      {
-          PlayerDb findPlayer = db.Players
-              .Where(p => p.PlayerName == createPlayer.Name).FirstOrDefault();
-
-          if (findPlayer != null)
-          {
-              Send(new S_CreatePlayer());
-          }
-          else
-          {
-              StatInfo statInfo = null;
-              DataManager.StatDict.TryGetValue(1, out statInfo);
-
-              PlayerDb newPlayer = new PlayerDb()
-              {
-                  PlayerName = createPlayer.Name,
-                  Level = statInfo.Level,
-                  Hp = statInfo.Hp <= 0 ? statInfo.MaxHp : statInfo.Hp,
-                  MaxHp = statInfo.MaxHp,
-                  Attack = statInfo.Attack,
-                  Speed = statInfo.Speed,
-                  TotalExp = statInfo.TotalExp,
-                  AccountDbId = AccountDbId
-              };
-
-              db.Players.Add(newPlayer);
-              bool success = db.SaveChangesEx();
-              if (success == false)
-                  return;
-
-              LobbyPlayerInfo lobbyPlayerInfo = new LobbyPlayerInfo()
-              {
-                  PlayerDbId = newPlayer.PlayerDbId,
-                  Name = newPlayer.PlayerName,
-                  StatInfo = new StatInfo()
-                  {
-                      Level = newPlayer.Level,
-                      Hp = statInfo.Hp <= 0 ? statInfo.MaxHp : statInfo.Hp,
-                      MaxHp = newPlayer.MaxHp,
-                      Attack = newPlayer.Attack,
-                      Speed = newPlayer.Speed,
-                      TotalExp = 0,
-                  }
-              };
-
-              LobbyPlayers.Add(lobbyPlayerInfo);
-
-              S_CreatePlayer sCreatePlayer = new S_CreatePlayer() { Player = new LobbyPlayerInfo() };
-              sCreatePlayer.Player.MergeFrom(lobbyPlayerInfo);
-
-              Send(sCreatePlayer);
-          }
-      }
-  }
-
-```
-
-</div>
-</details>
-
-#### 공간 분할 및 패킷 전송 최적화
-
-![공간 분할](https://github.com/user-attachments/assets/88cc95ad-bd12-4fdc-b3e3-98416ad679b6)
-
-패킷 전송 최적화를 위해 공간 분할을 구현하였습니다.  
-플레이어가 이동할 때마다 서버에서 플레이어의 위치를 확인하고 범위내의 다른 플레이어에게만 이동 패킷을 전송합니다.  
-클라이언트는 전송받은 패킷을 이용해 범위 밖의 오브젝트를 제거하고 범위 내의 오브젝트를 추가합니다.
-
-<details>
-<summary>Server/Game/Room/Zone.cs</summary>
-<div markdown="1">
-
-```c#
-
-  public class Zone
-  {
-      public int IndexY { get; private set; }
-      public int IndexX { get; private set; }
-
-      public HashSet<Player> Players { get; private set; } = new HashSet<Player>();
-      public HashSet<Monster> Monsters { get; private set; } = new HashSet<Monster>();
-      public HashSet<Projectile> Projectiles { get; private set; } = new HashSet<Projectile>();
-
-
-
-      public Zone(int y, int x)
-      {
-          IndexX = x;
-          IndexY = y;
-      }
-
-      public void Remove(GameObject gameObject)
-      {
-          if (gameObject == null)
-              return;
-
-          GameObjectType type = ObjectManager.GetObjectTypeById(gameObject.Id);
-
-          switch (type)
-          {
-              case GameObjectType.Player:
-                  Players.Remove(gameObject as Player);
-                  break;
-              case GameObjectType.Monster:
-                  Monsters.Remove(gameObject as Monster);
-                  break;
-              case GameObjectType.Projectile:
-                  Projectiles.Remove(gameObject as Projectile);
-                  break;
-          }
-      }
-
-      public Player FindOnePlayer(Func<Player, bool> condition)
-      {
-          foreach (Player player in Players)
-          {
-              if (condition.Invoke(player))
-                  return player;
-          }
-
-          return null;
-      }
-
-      public List<Player> FindAllPlayer(Func<Player, bool> condition)
-      {
-          List<Player> findList = new List<Player>();
-
-          foreach (Player player in Players)
-          {
-              if (condition.Invoke(player))
-                  findList.Add(player);
-          }
-
-          return findList;
-      }
-  }
-
-```
-
-</div>
-</details>
-
-<details>
-<summary>Server/Game/Room/VisionCube.cs</summary>
-<div markdown="1">
-
-```c#
-
-  public class VisionCube
-  {
-      public Player Owner { get; private set; }
-      public HashSet<GameObject> PreviousObjects { get; private set; } = new HashSet<GameObject>();
-
-
-
-      public VisionCube(Player owner)
-      {
-          Owner = owner;
-      }
-
-      public HashSet<GameObject> GetherObjects()
-      {
-          if (Owner == null || Owner.Room == null)
-              return null;
-
-          HashSet<GameObject> objects = new HashSet<GameObject>();
-
-          Vector2Int cellPos = Owner.CellPos;
-          List<Zone> zones = Owner.Room.GetAdjacentZones(cellPos);
-
-          foreach (Zone zone in zones)
-          {
-              foreach (Player player in zone.Players)
-              {
-                  int dx = player.CellPos.x - cellPos.x;
-                  int dy = player.CellPos.y - cellPos.y;
-
-                  if (Math.Abs(dx) > GameRoom.VisionCells || Math.Abs(dy) > GameRoom.VisionCells)
-                      continue;
-
-                  objects.Add(player);
-              }
-
-              foreach (Monster monster in zone.Monsters)
-              {
-                  int dx = monster.CellPos.x - cellPos.x;
-                  int dy = monster.CellPos.y - cellPos.y;
-
-                  if (Math.Abs(dx) > GameRoom.VisionCells || Math.Abs(dy) > GameRoom.VisionCells)
-                      continue;
-
-                  objects.Add(monster);
-              }
-
-              foreach (Projectile projectile in zone.Projectiles)
-              {
-                  int dx = projectile.CellPos.x - cellPos.x;
-                  int dy = projectile.CellPos.y - cellPos.y;
-
-                  if (Math.Abs(dx) > GameRoom.VisionCells || Math.Abs(dy) > GameRoom.VisionCells)
-                      continue;
-
-                  objects.Add(projectile);
-              }
-          }
-
-          return objects;
-      }
-
-      public void Update()
-      {
-          if (Owner == null || Owner.Room == null)
-              return;
-
-          HashSet<GameObject> currentObjects = GetherObjects();
-
-          List<GameObject> added = currentObjects.Except(PreviousObjects).ToList();
-          if (added.Count > 0)
-          {
-              S_Spawn spawnPacket = new S_Spawn();
-
-              foreach (GameObject obj in added)
-              {
-                  ObjectInfo info = obj.Info;
-                  info.MergeFrom(obj.Info);
-                  spawnPacket.Objects.Add(info);
-              }
-
-              Owner.Session.Send(spawnPacket);
-          }
-
-          List<GameObject> removed = PreviousObjects.Except(currentObjects).ToList();
-          if (removed.Count > 0)
-          {
-              S_Despawn despawnPacket = new S_Despawn();
-              foreach (GameObject obj in removed)
-              {
-                  despawnPacket.ObjectIds.Add(obj.Id);
-              }
-
-              Owner.Session.Send(despawnPacket);
-          }
-
-          PreviousObjects = currentObjects;
-
-          Owner.Room.PushAfter(500, Update);
-      }
-  }
-
-```
-
-</div>
-</details>
-
-#### A* Pathfinding
-
-![A star pathfinding](https://github.com/user-attachments/assets/af6c9ac6-a7ee-4e93-8a52-28b198ae93f5)
-
-A* 알고리즘을 사용해 몬스터의 이동 경로를 계산하였습니다.  
-서버에서 몬스터의 이동 경로를 계산하고 이동 패킷을 클라이언트에 전송합니다.
-
-<details>
-<summary>Server/Game/Room/Map.cs</summary>
-<div markdown="1">
-
-```c#
-
-  // U D L R
-  int[] _deltaY = new int[] { 1, -1, 0, 0 };
-  int[] _deltaX = new int[] { 0, 0, -1, 1 };
-  int[] _cost = new int[] { 10, 10, 10, 10 };
-
-  public List<Vector2Int> FindPath(Vector2Int startCellPos, Vector2Int destCellPos, bool checkObjects = true, int maxDist = 10)
-  {
-      List<Pos> path = new List<Pos>();
-
-      HashSet<Pos> closeList = new HashSet<Pos>();
-      Dictionary<Pos, int> openList = new Dictionary<Pos, int>();
-      Dictionary<Pos, Pos> parent = new Dictionary<Pos, Pos>();
-
-      PriorityQueue<PQNode> pq = new PriorityQueue<PQNode>();
-
-      Pos pos = Cell2Pos(startCellPos);
-      Pos dest = Cell2Pos(destCellPos);
-
-      openList.Add(pos, 10 * (Math.Abs(dest.Y - pos.Y) + Math.Abs(dest.X - pos.X)));
-      pq.Push(new PQNode() { F = 10 * (Math.Abs(dest.Y - pos.Y) + Math.Abs(dest.X - pos.X)), G = 0, Y = pos.Y, X = pos.X });
-      parent.Add(pos, pos);
-
-      while (pq.Count > 0)
-      {
-          PQNode pqNode = pq.Pop();
-          Pos node = new Pos(pqNode.Y, pqNode.X);
-
-          if (closeList.Contains(node))
-              continue;
-
-          closeList.Add(node);
-
-          if (node.Y == dest.Y && node.X == dest.X)
-              break;
-
-          for (int i = 0; i < _deltaY.Length; i++)
-          {
-              Pos next = new Pos(node.Y + _deltaY[i], node.X + _deltaX[i]);
-
-              if(Math.Abs(dest.Y - next.Y) + Math.Abs(dest.X - next.X) > maxDist)
-                  continue;
-
-              if (next.Y != dest.Y || next.X != dest.X)
-              {
-                  if (CanGo(Pos2Cell(next), checkObjects) == false) // CellPos
-                      continue;
-              }
-
-              if (closeList.Contains(next))
-                  continue;
-
-              int g = 0;// node.G + _cost[i];
-              int h = 10 * ((dest.Y - next.Y) * (dest.Y - next.Y) + (dest.X - next.X) * (dest.X - next.X));
-
-              int value = 0;
-              if (!openList.TryGetValue(next, out value))
-                  value = Int32.MaxValue;
-
-              if (value < g + h)
-                  continue;
-
-              if(!openList.TryAdd(next, g + h))
-                  openList[next] = g + h;
-
-              pq.Push(new PQNode() { F = g + h, G = g, Y = next.Y, X = next.X });
-
-              if (!parent.TryAdd(next, node))
-                  parent[next] = node;
-          }
-      }
-
-      return CalcCellPathFromParent(parent, dest);
-  }
-
-  List<Vector2Int> CalcCellPathFromParent(Dictionary<Pos, Pos> parent, Pos dest)
-  {
-      List<Vector2Int> cells = new List<Vector2Int>();
-
-      if (parent.ContainsKey(dest) == false)
-      {
-          Pos nearDest = new Pos();
-          int nearDist = Int32.MaxValue;
-
-          foreach (Pos p in parent.Keys)
-          {
-              int dist = Math.Abs(dest.Y - p.Y) + Math.Abs(dest.X - p.X);
-
-              if(dist < nearDist)
-              {
-                  nearDest = p;
-                  nearDist = dist;
-              }
-          }
-
-          dest = nearDest;
-      }
-
-      Pos pos = dest;
-      while (parent[pos] != pos)
-      {
-          cells.Add(Pos2Cell(pos));
-          pos = parent[pos];
-      }
-      cells.Add(Pos2Cell(pos));
-      cells.Reverse();
-
-      return cells;
-  }
-
-  Pos Cell2Pos(Vector2Int cell)
-  {
-      return new Pos(MaxY - cell.y, cell.x - MinX);
-  }
-
-  Vector2Int Pos2Cell(Pos pos)
-  {
-      return new Vector2Int(pos.X + MinX, MaxY - pos.Y);
-  }
-
-```
-
-</div>
-</details>
-
+> **참고** — 이 저장소는 포트폴리오 소스 열람을 중심으로 정리되어 있습니다. `Client/Packages`와 일부 서버 프로젝트 파일이 포함되어 있지 않아 원본 실행 환경을 완전히 재현하려면 누락된 프로젝트 설정을 복원해야 합니다.
