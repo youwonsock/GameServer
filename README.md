@@ -72,7 +72,7 @@ Protocol Buffers로 클라이언트와 서버가 공유하는 메시지 형식�
 - `GameRoom` → `Map`, `Zone`, `VisionCube`
 - `DbTransaction` → Entity Framework Core → SQL Server LocalDB
 
-> **UML 플레이스홀더** — Unity Client, AccountServer, GameServer와 핵심 클래스의 관계를 나타내는 전체 구조 UML 추가 예정
+<img src="Docs/Images/network-core-architecture.svg" alt="Network 2D Game 핵심 컴포넌트 UML" width="85%">
 
 ### 클래스별 역할
 
@@ -118,7 +118,7 @@ Protocol Buffers로 클라이언트와 서버가 공유하는 메시지 형식�
 - Protocol Buffers 메시지를 패킷 ID별 handler에 연결합니다.
 - 클라이언트는 수신 패킷을 `PacketQueue`에 저장한 뒤 Unity 메인 스레드에서 처리합니다.
 
-> **UML 플레이스홀더** — 소켓 수신부터 패킷 프레이밍, `PacketQueue`, Unity 메인 스레드 처리까지의 시퀀스 UML 추가 예정
+<img src="Docs/Images/packet-processing-sequence.svg" alt="비동기 패킷 처리 시퀀스 UML" width="100%">
 
 ### JobQueue 기반 작업 직렬화
 
@@ -133,7 +133,49 @@ Protocol Buffers로 클라이언트와 서버가 공유하는 메시지 형식�
 - `JobTimer`가 몬스터 AI와 VisionCube 갱신 같은 지연 작업을 예약합니다.
 - DB 처리 완료 후 결과 작업을 다시 GameRoom 큐에 전달해 게임 상태에 반영합니다.
 
-> **코드 샘플 플레이스홀더** — `Push`, `PushAfter`, `Flush`와 DB 완료 후 GameRoom으로 작업을 반환하는 흐름을 보여주는 실행 가능한 예제 추가 예정
+**대표 코드**
+
+```csharp
+// JobSerializer.cs
+public void Push(IJob job)
+{
+    lock (lockObj)
+    {
+        jobQueue.Enqueue(job);
+    }
+}
+
+public void Flush()
+{
+    timer.Flush();
+
+    while (true)
+    {
+        IJob job = Pop();
+        if (job == null)
+            return;
+
+        job.Execute();
+    }
+}
+
+// DbTransaction.cs
+Instance.Push(() =>
+{
+    using (AppDbContext db = new AppDbContext())
+    {
+        db.Entry(playerDb).State = EntityState.Unchanged;
+        db.Entry(playerDb).Property(nameof(PlayerDb.Hp)).IsModified = true;
+
+        if (db.SaveChangesEx())
+            room.Push(() => Console.WriteLine($"Hp Saved({playerDb.Hp})"));
+    }
+});
+```
+
+작업 요청은 대상 큐에 등록하고 각 실행 루프가 `Flush()`로 순차 처리합니다. DB 저장이 끝난 뒤에는 `room.Push`로 결과 반영 작업을 GameRoom의 실행 문맥에 되돌려 공유 상태의 변경 순서를 유지합니다.
+
+관련 코드: [`JobSerializer.cs`](Server/Server/Game/Job/JobSerializer.cs), [`DbTransaction.cs`](Server/Server/DB/DbTransaction.cs)
 
 ### 데이터베이스 연동
 
