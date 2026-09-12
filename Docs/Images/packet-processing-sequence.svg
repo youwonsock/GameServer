@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="600" viewBox="0 0 1100 600" role="img" aria-labelledby="title desc">
+  <title id="title">Packet Processing Sequence</title>
+  <desc id="desc">A game server packet is received asynchronously, framed, decoded, queued, and processed on the Unity main thread.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+    </marker>
+    <style>
+      .title { font: 700 26px Arial, sans-serif; fill: #0f172a; }
+      .head { font: 700 15px Arial, sans-serif; fill: #0f172a; }
+      .msg { font: 14px Arial, sans-serif; fill: #334155; }
+      .box { fill: #eff6ff; stroke: #334155; stroke-width: 2; rx: 9; }
+      .life { stroke: #94a3b8; stroke-width: 2; stroke-dasharray: 7 7; }
+      .call { stroke: #475569; stroke-width: 2; marker-end: url(#arrow); }
+      .note { fill: #fff7ed; stroke: #fb923c; stroke-width: 1.5; rx: 8; }
+    </style>
+  </defs>
+  <rect width="1100" height="600" fill="#ffffff"/>
+  <text x="550" y="42" text-anchor="middle" class="title">Packet Processing Sequence</text>
+
+  <rect x="35" y="75" width="170" height="54" class="box"/>
+  <rect x="250" y="75" width="170" height="54" class="box"/>
+  <rect x="465" y="75" width="170" height="54" class="box"/>
+  <rect x="680" y="75" width="170" height="54" class="box"/>
+  <rect x="895" y="75" width="170" height="54" class="box"/>
+  <text x="120" y="108" text-anchor="middle" class="head">GameServer</text>
+  <text x="335" y="99" text-anchor="middle" class="head">ServerSession</text>
+  <text x="335" y="117" text-anchor="middle" class="msg">SocketAsyncEventArgs</text>
+  <text x="550" y="108" text-anchor="middle" class="head">PacketManager</text>
+  <text x="765" y="108" text-anchor="middle" class="head">PacketQueue</text>
+  <text x="980" y="99" text-anchor="middle" class="head">NetworkManager</text>
+  <text x="980" y="117" text-anchor="middle" class="msg">Unity Main Thread</text>
+
+  <line x1="120" y1="129" x2="120" y2="555" class="life"/>
+  <line x1="335" y1="129" x2="335" y2="555" class="life"/>
+  <line x1="550" y1="129" x2="550" y2="555" class="life"/>
+  <line x1="765" y1="129" x2="765" y2="555" class="life"/>
+  <line x1="980" y1="129" x2="980" y2="555" class="life"/>
+
+  <line x1="120" y1="175" x2="335" y2="175" class="call"/>
+  <text x="227" y="163" text-anchor="middle" class="msg">[size][packetId][payload]</text>
+
+  <line x1="335" y1="240" x2="550" y2="240" class="call"/>
+  <text x="442" y="228" text-anchor="middle" class="msg">OnRecvPacket(buffer)</text>
+
+  <rect x="455" y="270" width="190" height="65" class="note"/>
+  <text x="550" y="295" text-anchor="middle" class="msg">Split header · resolve ID</text>
+  <text x="550" y="318" text-anchor="middle" class="msg">Deserialize Protobuf</text>
+
+  <line x1="550" y1="370" x2="765" y2="370" class="call"/>
+  <text x="657" y="358" text-anchor="middle" class="msg">Push(id, message)</text>
+
+  <line x1="980" y1="435" x2="765" y2="435" class="call"/>
+  <text x="872" y="423" text-anchor="middle" class="msg">Update() · PopAll()</text>
+
+  <line x1="765" y1="500" x2="980" y2="500" class="call"/>
+  <text x="872" y="488" text-anchor="middle" class="msg">handler.Invoke()</text>
+
+  <rect x="895" y="525" width="170" height="44" class="note"/>
+  <text x="980" y="552" text-anchor="middle" class="msg">Update game objects</text>
+</svg>
