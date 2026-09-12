@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720" role="img" aria-labelledby="title desc">
+  <title id="title">Network 2D Game Core Architecture</title>
+  <desc id="desc">Unity Client communicates with AccountServer over HTTPS and GameServer over TCP. Both servers use SQL Server LocalDB.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+    </marker>
+    <style>
+      .title { font: 700 26px Arial, sans-serif; fill: #0f172a; }
+      .name { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .item { font: 15px Arial, sans-serif; fill: #334155; }
+      .label { font: 700 14px Arial, sans-serif; fill: #475569; }
+      .box { stroke: #334155; stroke-width: 2; rx: 12; }
+      .line { stroke: #475569; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .bidir { stroke: #475569; stroke-width: 2; fill: none; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .divider { stroke: #94a3b8; stroke-width: 1; }
+    </style>
+  </defs>
+  <rect width="1000" height="720" fill="#ffffff"/>
+  <text x="500" y="44" text-anchor="middle" class="title">Core Component UML</text>
+
+  <rect x="60" y="205" width="280" height="190" class="box" fill="#eff6ff"/>
+  <text x="200" y="237" text-anchor="middle" class="name">Unity Client</text>
+  <line x1="60" y1="252" x2="340" y2="252" class="divider"/>
+  <text x="85" y="284" class="item">WebManager</text>
+  <text x="85" y="316" class="item">NetworkManager</text>
+  <text x="85" y="348" class="item">ServerSession</text>
+  <text x="85" y="380" class="item">PacketQueue</text>
+
+  <rect x="660" y="80" width="280" height="150" class="box" fill="#f0fdf4"/>
+  <text x="800" y="112" text-anchor="middle" class="name">AccountServer</text>
+  <line x1="660" y1="127" x2="940" y2="127" class="divider"/>
+  <text x="685" y="159" class="item">AccountController</text>
+  <text x="685" y="191" class="item">AppDbContext</text>
+
+  <rect x="660" y="310" width="280" height="220" class="box" fill="#fff7ed"/>
+  <text x="800" y="342" text-anchor="middle" class="name">GameServer</text>
+  <line x1="660" y1="357" x2="940" y2="357" class="divider"/>
+  <text x="685" y="389" class="item">ClientSession</text>
+  <text x="685" y="421" class="item">GameLogic / GameRoom</text>
+  <text x="685" y="453" class="item">Map / Zone / VisionCube</text>
+  <text x="685" y="485" class="item">DbTransaction</text>
+  <text x="685" y="517" class="item">JobSerializer</text>
+
+  <rect x="660" y="590" width="280" height="100" class="box" fill="#f8fafc"/>
+  <text x="800" y="623" text-anchor="middle" class="name">SQL Server LocalDB</text>
+  <line x1="660" y1="640" x2="940" y2="640" class="divider"/>
+  <text x="800" y="670" text-anchor="middle" class="item">Account / Player / Item</text>
+
+  <path d="M340 250 C460 250, 535 155, 660 155" class="bidir"/>
+  <text x="500" y="187" text-anchor="middle" class="label">HTTPS · REST</text>
+
+  <path d="M340 335 C475 335, 525 385, 660 385" class="bidir"/>
+  <text x="500" y="340" text-anchor="middle" class="label">TCP · Protocol Buffers</text>
+
+  <path d="M900 230 L970 270 L970 550 L900 590" class="line"/>
+  <text x="940" y="565" text-anchor="middle" class="label">EF Core</text>
+
+  <path d="M800 530 L800 590" class="line"/>
+  <text x="840" y="568" text-anchor="middle" class="label">EF Core</text>
+</svg>
